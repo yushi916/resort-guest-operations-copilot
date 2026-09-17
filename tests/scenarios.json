@@ -1,0 +1,107 @@
+{
+  "suite": "Resort Guest Operations Copilot",
+  "type": "manual-integration-fixtures",
+  "knowledge_base_version": "1.1",
+  "scenarios": [
+    {
+      "id": "OPS-01",
+      "input": "615房间需要补充两套牙具。",
+      "expected": {
+        "route": "routine",
+        "requiresApproval": false,
+        "needsHumanEscalation": false,
+        "auditStatus": "acknowledged"
+      }
+    },
+    {
+      "id": "OPS-02",
+      "input": "可以给308房间免费延迟退房到下午2点吗？",
+      "expected": {
+        "route": "manager_approval",
+        "requiresApproval": true,
+        "needsHumanEscalation": false,
+        "auditStatus": "pending_approval",
+        "mustNotClaim": ["approved", "confirmed"]
+      }
+    },
+    {
+      "id": "OPS-03",
+      "input": "厨房有很强的燃气味。",
+      "expected": {
+        "route": "human_escalation",
+        "requiresApproval": false,
+        "needsHumanEscalation": true,
+        "auditStatus": "escalated"
+      }
+    },
+    {
+      "id": "OPS-04",
+      "input": "请为820房间提供一张婴儿床。",
+      "expected": {
+        "route": "routine",
+        "requiresApproval": false,
+        "needsHumanEscalation": false,
+        "replyConcepts": ["inventory check", "staff installation", "safety check"]
+      }
+    },
+    {
+      "id": "BKG-01",
+      "input": "请为501房间2位客人预约2026年9月19日下午3点的芳香水疗。",
+      "expected": {
+        "requiresBookingWorkflow": true,
+        "requestAction": "create",
+        "serviceType": "spa",
+        "workflowStatus": "pending_availability",
+        "roomNumber": "501",
+        "requestedDate": "2026-09-19",
+        "requestedTime": "15:00",
+        "guestCount": 2,
+        "mustNotClaim": ["confirmed"]
+      }
+    },
+    {
+      "id": "BKG-03",
+      "input": "请将水疗预约 RGO-REQ-EXISTING001 修改到2026年9月18日下午5点。",
+      "precondition": "RGO-REQ-EXISTING001 exists",
+      "expected": {
+        "requestAction": "modify",
+        "targetBookingReference": "RGO-REQ-EXISTING001",
+        "workflowStatus": "modification_requested",
+        "originalRecordPreserved": true
+      }
+    },
+    {
+      "id": "BKG-04",
+      "input": "请取消预约 RGO-REQ-EXISTING001。",
+      "precondition": "RGO-REQ-EXISTING001 exists",
+      "expected": {
+        "requestAction": "cancel",
+        "targetBookingReference": "RGO-REQ-EXISTING001",
+        "workflowStatus": "cancellation_requested",
+        "originalRecordPreserved": true
+      }
+    },
+    {
+      "id": "BKG-05",
+      "input": "请取消水疗预约 RGO-REQ-NOTFOUND999。",
+      "precondition": "RGO-REQ-NOTFOUND999 does not exist",
+      "expected": {
+        "workflowStatus": "reference_not_found",
+        "bookingRowInserted": false,
+        "replyConcepts": ["reference not found", "no modification or cancellation performed"]
+      }
+    },
+    {
+      "id": "MIX-01",
+      "input": "103房间有异味，同时请为1位客人预约明天上午9点的早餐。",
+      "expected": {
+        "requiresBookingWorkflow": true,
+        "hasOperationalRequest": true,
+        "operationalIntent": "room odor",
+        "bookingIntent": "breakfast reservation",
+        "sharedRoomNumber": "103",
+        "consolidatedReply": true
+      }
+    }
+  ]
+}

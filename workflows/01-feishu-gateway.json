@@ -1,0 +1,637 @@
+{
+  "name": "01 - Feishu Gateway",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "627d04be-3e0e-4f11-963f-d14e2dcd146d",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -112,
+        80
+      ],
+      "id": "9b8a19ba-5a59-4255-a9cd-22f0c7fe5b91",
+      "name": "Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.body.challenge ? { challenge: $json.body.challenge } : { code: 0 }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        224,
+        80
+      ],
+      "id": "83c559cf-fc7e-4edf-ba4b-a57751845383",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// // Loop over input items and add a new field called 'myNewField' to the JSON of each one\n// for (const item of $input.all()) {\n//   item.json.myNewField = 1;\n// }\n\n// return $input.all();\nconst expectedToken = '01ZQJosdoGfdPTQBj6LVfd0cpCH66sIT';\nconst items = $input.all();\n\nfor (const item of items) {\n  const body = item.json.body ?? {};\n  const receivedToken = body.token ?? body.header?.token;\n\n  if (!receivedToken || receivedToken !== expectedToken) {\n    throw new Error('Unauthorized Feishu request');\n  }\n}\n\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        80
+      ],
+      "id": "f6e22279-65bb-4c9d-b10f-7fbfeafc00f8",
+      "name": "Validate Feishu Token"
+    },
+    {
+      "parameters": {
+        "jsCode": "// // Loop over input items and add a new field called 'myNewField' to the JSON of each one\n// for (const item of $input.all()) {\n//   item.json.myNewField = 1;\n// }\n\n// return $input.all();\nconst input = $input.first().json;\nconst body = input.body ?? {};\nconst header = body.header ?? {};\nconst event = body.event ?? {};\nconst message = event.message ?? {};\n\n// 只处理“收到消息”事件\nif (header.event_type !== 'im.message.receive_v1') {\n  return [];\n}\n\n// 第一版只处理文本\nif (message.message_type !== 'text') {\n  return [];\n}\n\nlet content;\n\ntry {\n  content = JSON.parse(message.content ?? '{}');\n} catch {\n  throw new Error('Invalid Feishu message content');\n}\n\nreturn [\n  {\n    json: {\n      eventId: header.event_id,\n      eventType: header.event_type,\n      senderOpenId: event.sender?.sender_id?.open_id ?? '',\n      chatId: message.chat_id ?? '',\n      messageId: message.message_id ?? '',\n      messageType: message.message_type,\n      text: (content.text ?? '').trim()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        80
+      ],
+      "id": "12d7975a-141b-4e67-930a-59568f7c0443",
+      "name": "Normalize Feishu Message"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        992,
+        432
+      ],
+      "id": "86f68b72-8662-4282-af3c-886e04771e02",
+      "name": "Get Feishu Tenant Token"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.tenant_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "=application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "receive_id",
+              "value": "={{ $('Normalize Feishu Message').item.json.chatId }}"
+            },
+            {
+              "name": "msg_type",
+              "value": "text"
+            },
+            {
+              "name": "content",
+              "value": "={{ JSON.stringify({\n  text: $('Build Operations Record').item.json.requiresBookingWorkflow\n    ? (\n        $('Build Operations Record').item.json.hasOperationalRequest\n          ? $('Run Guest Operations Intelligence').item.json.finalReply\n            + '\\n\\n'\n            + $('Run Service Booking Operations').item.json.bookingReply\n          : $('Run Service Booking Operations').item.json.bookingReply\n      )\n    : $('Run Guest Operations Intelligence').item.json.finalReply\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1184,
+        432
+      ],
+      "id": "ebbe3894-05f1-414f-b96f-f594aea6dd3f",
+      "name": "Send Feishu Reply"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "02 - Guest Operations Intelligence"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "text": "={{ $json.text }}",
+            "chatId": "={{ $json.chatId }}",
+            "senderOpenId": "={{ $json.senderOpenId }}",
+            "eventId": "={{ $json.eventId }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "text",
+              "displayName": "text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "chatId",
+              "displayName": "chatId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "senderOpenId",
+              "displayName": "senderOpenId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "eventId",
+              "displayName": "eventId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -96,
+        416
+      ],
+      "id": "6fa27f03-7b98-4b06-8342-fe1ce5937808",
+      "name": "Run Guest Operations Intelligence"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 读取飞书标准化消息\nconst message =\n  $('Normalize Feishu Message').item.json;\n\n// 读取 Guest Operations Intelligence 的判断结果\nconst ai =\n  $('Run Guest Operations Intelligence').item.json;\n\n// 合并业务字段、路由结果和 RAG 审计信息\nreturn [\n  {\n    json: {\n      eventId: message.eventId,\n      messageId: message.messageId,\n      chatId: message.chatId,\n      senderOpenId: message.senderOpenId,\n      text: message.text,\n\n      category: ai.category,\n      priority: ai.priority,\n      summary: ai.summary,\n      suggestedReply: ai.suggestedReply,\n\n      requiresApproval: ai.requiresApproval,\n      needsHumanEscalation: ai.needsHumanEscalation,\nrequiresBookingWorkflow:\n  ai.requiresBookingWorkflow === true,\n      hasOperationalRequest:\n  ai.hasOperationalRequest === true,\n\noperationalRequestText:\n  ai.operationalRequestText ?? '',\n\nbookingRequestText:\n  ai.bookingRequestText ?? '',\nroute: ai.route,\nfinalReply: ai.finalReply,\n\n      ragGrounded: ai.ragGrounded === true,\n      sopSource: ai.sopSource ?? null,\n      sopVersion: ai.sopVersion ?? null,\n      retrievalCount: Number.isFinite(Number(ai.retrievalCount))\n        ? Number(ai.retrievalCount)\n        : 0,\n      retrievalTopScore:\n        typeof ai.retrievalTopScore === 'number'\n          ? ai.retrievalTopScore\n          : null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        416
+      ],
+      "id": "c801069d-d7db-493e-b778-95ee7ee62c93",
+      "name": "Build Operations Record"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "03 - Operations Audit & Approval"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        304,
+        416
+      ],
+      "id": "e8bb1a18-e763-421f-b1f3-cb78d5a674a5",
+      "name": "Log Operations Request"
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "dedupeValue": "={{ $json.eventId }}",
+        "options": {
+          "scope": "node",
+          "historySize": 10000
+        }
+      },
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        608,
+        80
+      ],
+      "id": "a5799522-993a-49fe-a376-fc7db105f591",
+      "name": "Remove Duplicates"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d09e7162-7a6c-4a38-a47e-7d67dd5ef668",
+              "leftValue": "={{ $('Build Operations Record').item.json.requiresBookingWorkflow }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        512,
+        464
+      ],
+      "id": "9e582f28-a8b5-4ad4-9c66-01ae1014ddcd",
+      "name": "Route Service Booking"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "05 - Service Booking Operations"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "eventId": "={{ $('Build Operations Record').item.json.eventId }}",
+            "messageId": "={{ $('Build Operations Record').item.json.messageId }}",
+            "chatId": "={{ $('Build Operations Record').item.json.chatId }}",
+            "senderOpenId": "={{ $('Build Operations Record').item.json.senderOpenId }}",
+            "text": "={{ $('Build Operations Record').item.json.bookingRequestText || $('Build Operations Record').item.json.text }}",
+            "category": "={{ $('Build Operations Record').item.json.category }}",
+            "route": "={{ $('Build Operations Record').item.json.route }}",
+            "requiresApproval": "={{ $('Build Operations Record').item.json.requiresApproval }}",
+            "originalText": "={{ $('Build Operations Record').item.json.text }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "eventId",
+              "displayName": "eventId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "messageId",
+              "displayName": "messageId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "chatId",
+              "displayName": "chatId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "senderOpenId",
+              "displayName": "senderOpenId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "text",
+              "displayName": "text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "route",
+              "displayName": "route",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "requiresApproval",
+              "displayName": "requiresApproval",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean",
+              "removed": false
+            },
+            {
+              "id": "originalText",
+              "displayName": "originalText",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        688,
+        400
+      ],
+      "id": "4f8b05c4-0070-447c-983f-7a507174b63b",
+      "name": "Run Service Booking Operations"
+    },
+    {
+      "parameters": {
+        "content": "## 1. Inbound Request & Verification\n\nReceives Feishu webhook events, validates the request,\nand returns an immediate acknowledgement.",
+        "height": 256,
+        "width": 576,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        -32
+      ],
+      "id": "8597be2f-c4b1-4511-875d-eded27b4b87b",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## 2. Message Normalization & Idempotency\n\nExtracts a consistent internal message structure\nand prevents duplicate event processing.",
+        "height": 256,
+        "width": 448
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        368,
+        -32
+      ],
+      "id": "cd6400f5-4ac1-4249-8ae3-1ff04c7bcc5e",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## 3. RAG-Grounded Intelligence & Audit\n\nCalls the intelligence sub-workflow, normalizes the result,\nand stores the operational decision with RAG evidence.",
+        "height": 288,
+        "width": 752,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -288,
+        304
+      ],
+      "id": "0b090333-1788-4018-99a6-c7e1e832175e",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## 4. Service Booking Routing\n\nRoutes reservation-related requests to the booking workflow.\nNon-booking requests continue directly to response delivery.",
+        "height": 288,
+        "width": 400,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        464,
+        304
+      ],
+      "id": "10b923f9-5d1d-4110-99ea-ba0254d28a73",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "## 5. Feishu Response Delivery\n\nObtains a tenant access token and sends one consolidated,\npolicy-safe response back to the employee.",
+        "height": 288,
+        "width": 496,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        864,
+        304
+      ],
+      "id": "8fd37fe1-a296-4a9f-a9e8-b14ee737bf87",
+      "name": "Sticky Note4"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Feishu Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Feishu Token": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Feishu Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Feishu Message": {
+      "main": [
+        [
+          {
+            "node": "Remove Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Feishu Tenant Token": {
+      "main": [
+        [
+          {
+            "node": "Send Feishu Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Guest Operations Intelligence": {
+      "main": [
+        [
+          {
+            "node": "Build Operations Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Operations Record": {
+      "main": [
+        [
+          {
+            "node": "Log Operations Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Operations Request": {
+      "main": [
+        [
+          {
+            "node": "Route Service Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Run Guest Operations Intelligence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Service Booking": {
+      "main": [
+        [
+          {
+            "node": "Run Service Booking Operations",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Feishu Tenant Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Service Booking Operations": {
+      "main": [
+        [
+          {
+            "node": "Get Feishu Tenant Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "tags": []
+}

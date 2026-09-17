@@ -1,0 +1,93 @@
+{
+  "name": "03 - Operations Audit & Approval",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "73d05a69-0a14-4932-900e-25a72bf1e711",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const input = $json;\n\nconst route = input.route || 'routine';\n\nconst statusByRoute = {\n  routine: 'acknowledged',\n  manager_approval: 'pending_approval',\n  human_escalation: 'escalated'\n};\n\nconst status = statusByRoute[route] || 'received';\n\n// 验证审计记录必须具备的业务字段\nif (!input.eventId) {\n  throw new Error('Missing eventId');\n}\n\nif (!input.chatId) {\n  throw new Error('Missing chatId');\n}\n\nif (!input.text) {\n  throw new Error('Missing employee message');\n}\n\n// 标准化 RAG 审计数值\nconst retrievalCount = Number(input.retrievalCount);\n\nconst retrievalTopScore =\n  typeof input.retrievalTopScore === 'number' &&\n  Number.isFinite(input.retrievalTopScore)\n    ? input.retrievalTopScore\n    : null;\n\n// 输出字段名与 Supabase 表字段保持一致\nreturn {\n  event_id: input.eventId,\n  message_id: input.messageId || null,\n  chat_id: input.chatId,\n  sender_open_id: input.senderOpenId || null,\n  employee_message: input.text,\n\n  category: input.category || 'Other',\n  priority: input.priority || 'Normal',\n  summary: input.summary || null,\n  suggested_reply: input.suggestedReply || null,\n\n  route: route,\n  requires_approval: input.requiresApproval === true,\n  needs_human_escalation:\n    input.needsHumanEscalation === true,\n\n  status: status,\n\n  rag_grounded: input.ragGrounded === true,\n  sop_source: input.sopSource || null,\n  sop_version: input.sopVersion || null,\n  retrieval_count: Number.isFinite(retrievalCount)\n    ? Math.max(0, Math.trunc(retrievalCount))\n    : 0,\n  retrieval_top_score: retrievalTopScore\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "a1630986-5c57-4edb-a6a5-d49e8d393d8c",
+      "name": "Prepare Audit Record"
+    },
+    {
+      "parameters": {
+        "tableId": "resort_operations_requests",
+        "dataToSend": "autoMapInputData"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "96e05796-45e8-477f-becc-a7a0a6a2ed33",
+      "name": "Create a row"
+    },
+    {
+      "parameters": {
+        "content": "## Operations Audit & Human Oversight\n\nValidates and stores operational requests, AI recommendations,\napproval states, escalation states, and RAG evidence in Supabase.\n\nPending approvals and emergencies remain under human control;\nthis workflow never approves or resolves them automatically.",
+        "height": 352,
+        "width": 752,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        -176
+      ],
+      "id": "3d895a4c-6ce5-4e8c-92e8-c7e8e8e8382f",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audit Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audit Record": {
+      "main": [
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "tags": []
+}
